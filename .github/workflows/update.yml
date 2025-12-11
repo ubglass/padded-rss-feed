@@ -1,46 +1,33 @@
-name: Update Padded RSS Feed
-
-on:
-  schedule:
-    - cron: "0 * * * *"   # every hour
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Install XML tools
-        run: sudo apt-get install -y xmlstarlet
-
-      - name: Fetch source URL
-        id: fetch
+      - name: Apply padding
         run: |
-          SOURCE=$(cat rss-source.txt)
-          curl -L "$SOURCE" -o original.xml
-          echo "Downloaded source feed."
+          # 60x EM SPACES
+          PAD="&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;"
 
-      - name: Apply Padding (12 EM-spaces)
-        run: |
-          PAD="&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;"
+          cp original.xml rss-working.xml
 
-          
-          # Wrap everything in channel/item text fields with padding
-          xmlstarlet ed \
-            -u "//channel/title" -v "$PAD$(xmlstarlet sel -t -v '//channel/title' original.xml)" \
-            -u "//channel/description" -v "$PAD$(xmlstarlet sel -t -v '//channel/description' original.xml)" \
-            -u "//channel/link" -v "$PAD$(xmlstarlet sel -t -v '//channel/link' original.xml)" \
-            $(xmlstarlet sel -t -m "//item" \
-              -v "concat(' -u \"', name(./title), '\" -v \"', '$PAD', ./title, '\"')" \
-              -n original.xml) \
-            > rss.xml || cp original.xml rss.xml
+          # ---- CHANNEL LEVEL ----
+          # Title, description, link
+          for TAG in title description link; do
+            CONTENT=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/$TAG)" original.xml)
+            xmlstarlet ed -u "/rss/channel/$TAG" -v "$PAD$CONTENT" rss-working.xml > tmp && mv tmp rss-working.xml
+          done
 
-      - name: Commit and Push updated feed
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add rss.xml
-          git commit -m "Auto-update padded RSS feed" || echo "No changes to commit"
-          git push
+          # ---- ITEMS LEVEL ----
+          # For each item: title, description, link
+          COUNT=$(xmlstarlet sel -t -v "count(/rss/channel/item)" original.xml)
+
+          for i in $(seq 1 $COUNT); do
+            # TITLE
+            T=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/item[$i]/title)" original.xml)
+            xmlstarlet ed -u "/rss/channel/item[$i]/title" -v "$PAD$T" rss-working.xml > tmp && mv tmp rss-working.xml
+
+            # DESCRIPTION (HTML preserved)
+            D=$(xmlstarlet sel -t -c "/rss/channel/item[$i]/description" original.xml | sed 's/<description>//;s/<\/description>//' )
+            xmlstarlet ed -u "/rss/channel/item[$i]/description" -v "$PAD$D" rss-working.xml > tmp && mv tmp rss-working.xml
+
+            # LINK
+            L=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/item[$i]/link)" original.xml)
+            xmlstarlet ed -u "/rss/channel/item[$i]/link" -v "$PAD$L" rss-working.xml > tmp && mv tmp rss-working.xml
+          done
+
+          mv rss-working.xml rss.xml
