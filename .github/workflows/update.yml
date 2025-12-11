@@ -1,4 +1,4 @@
-name: RSS Feed - Titles Only (Padded)
+name: RSS Feed - Small Unicode Titles Only
 
 permissions:
   contents: write
@@ -6,7 +6,7 @@ permissions:
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "0 * * * *"   # hourly
 
 jobs:
   update:
@@ -16,21 +16,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install tools
+      - name: Install XML tools
         run: sudo apt-get install -y xmlstarlet
 
       - name: Fetch original RSS
         run: |
           curl -L "$(cat rss-source.txt)" -o raw.xml
 
-      - name: Build a titles-only feed
+      - name: Build titles-only small-text feed
         run: |
           PAD="&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;"
 
-          # Start from a clean copy
           cp raw.xml rss.xml
 
-          echo "Removing all descriptions, links, content blocks, images, HTML..."
+          echo "Remove everything except titles..."
           xmlstarlet ed \
             -d "//description" \
             -d "//link" \
@@ -41,18 +40,32 @@ jobs:
             -d "//dc:creator" \
             rss.xml > tmp.xml && mv tmp.xml rss.xml
 
-          echo "Padding titles only..."
+          echo "Convert titles to super-small unicode..."
+          
+          # Unicode small text transform via sed replacements
+          SMALL() {
+            echo "$1" \
+            | sed 's/A/ᴀ/g' | sed 's/B/ʙ/g' | sed 's/C/ᴄ/g' | sed 's/D/ᴅ/g' \
+            | sed 's/E/ᴇ/g' | sed 's/F/ꜰ/g' | sed 's/G/ɢ/g' | sed 's/H/ʜ/g' \
+            | sed 's/I/ɪ/g' | sed 's/J/ᴊ/g' | sed 's/K/ᴋ/g' | sed 's/L/ʟ/g' \
+            | sed 's/M/ᴍ/g' | sed 's/N/ɴ/g' | sed 's/O/ᴏ/g' | sed 's/P/ᴘ/g' \
+            | sed 's/Q/ǫ/g' | sed 's/R/ʀ/g' | sed 's/S/s/g' | sed 's/T/ᴛ/g' \
+            | sed 's/U/ᴜ/g' | sed 's/V/ᴠ/g' | sed 's/W/ᴡ/g' | sed 's/X/x/g' \
+            | sed 's/Y/ʏ/g' | sed 's/Z/ᴢ/g'
+          }
+
           COUNT=$(xmlstarlet sel -t -v "count(/rss/channel/item)" rss.xml)
 
           for i in $(seq 1 $COUNT); do
-            TITLE=$(xmlstarlet sel -t -v "/rss/channel/item[$i]/title" rss.xml | sed 's/<[^>]*>//g')
-            xmlstarlet ed -u "/rss/channel/item[$i]/title" -v "$PAD$TITLE" rss.xml > tmp.xml && mv tmp.xml rss.xml
+            RAW_TITLE=$(xmlstarlet sel -t -v "/rss/channel/item[$i]/title" rss.xml | sed 's/<[^>]*>//g')
+            SMALL_TITLE=$(SMALL "$RAW_TITLE")
+            xmlstarlet ed -u "/rss/channel/item[$i]/title" -v "$PAD$SMALL_TITLE" rss.xml > tmp.xml && mv tmp.xml rss.xml
           done
 
-      - name: Commit padded titles-only feed
+      - name: Commit final feed
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add rss.xml
-          git commit -m "Updated titles-only padded feed" || echo "No changes"
+          git commit -m "Updated small-unicode padded titles feed" || echo "No changes"
           git push
