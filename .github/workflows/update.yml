@@ -1,4 +1,4 @@
-name: Update Padded RSS Feed
+name: RSS Feed - Titles Only (Padded)
 
 permissions:
   contents: write
@@ -16,57 +16,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install XML tools
+      - name: Install tools
         run: sudo apt-get install -y xmlstarlet
 
-      - name: Fetch source feed
+      - name: Fetch original RSS
         run: |
-          curl -L "$(cat rss-source.txt)" -o original.xml
+          curl -L "$(cat rss-source.txt)" -o raw.xml
 
-      - name: Clean and Pad Feed for Dakboard
+      - name: Build a titles-only feed
         run: |
           PAD="&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;"
 
-          cp original.xml rss-working.xml
+          # Start from a clean copy
+          cp raw.xml rss.xml
 
-          echo "Removing <content:encoded> (Dakboard pulls this preferentially)..."
-          xmlstarlet ed -d "//content:encoded" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
+          echo "Removing all descriptions, links, content blocks, images, HTML..."
+          xmlstarlet ed \
+            -d "//description" \
+            -d "//link" \
+            -d "//content:encoded" \
+            -d "//media:content" \
+            -d "//guid" \
+            -d "//pubDate" \
+            -d "//dc:creator" \
+            rss.xml > tmp.xml && mv tmp.xml rss.xml
 
-          echo "Clean Channel Title + Link..."
-          for TAG in title link; do
-            CONTENT=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/$TAG)" rss-working.xml)
-            xmlstarlet ed -u "/rss/channel/$TAG" -v "$PAD$CONTENT" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
-          done
-
-          echo "Clean Channel Description..."
-          CH_DESC=$(xmlstarlet sel -t -c "/rss/channel/description" rss-working.xml | sed 's/<[^>]*>//g')
-          xmlstarlet ed -u "/rss/channel/description" -v "$PAD$CH_DESC" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
-
-          echo "Processing item nodes..."
-          COUNT=$(xmlstarlet sel -t -v "count(/rss/channel/item)" rss-working.xml)
+          echo "Padding titles only..."
+          COUNT=$(xmlstarlet sel -t -v "count(/rss/channel/item)" rss.xml)
 
           for i in $(seq 1 $COUNT); do
-
-            # TITLE
-            T=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/item[$i]/title)" rss-working.xml)
-            xmlstarlet ed -u "/rss/channel/item[$i]/title" -v "$PAD$T" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
-
-            # DESCRIPTION (strip HTML → plain text)
-            D=$(xmlstarlet sel -t -c "/rss/channel/item[$i]/description" rss-working.xml | sed 's/<[^>]*>//g')
-            xmlstarlet ed -u "/rss/channel/item[$i]/description" -v "$PAD$D" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
-
-            # LINK
-            L=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/item[$i]/link)" rss-working.xml)
-            xmlstarlet ed -u "/rss/channel/item[$i]/link" -v "$PAD$L" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
-
+            TITLE=$(xmlstarlet sel -t -v "/rss/channel/item[$i]/title" rss.xml | sed 's/<[^>]*>//g')
+            xmlstarlet ed -u "/rss/channel/item[$i]/title" -v "$PAD$TITLE" rss.xml > tmp.xml && mv tmp.xml rss.xml
           done
 
-          mv rss-working.xml rss.xml
-
-      - name: Commit and Push Result
+      - name: Commit padded titles-only feed
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add rss.xml
-          git commit -m "Updated padded + cleaned feed" || echo "No changes"
+          git commit -m "Updated titles-only padded feed" || echo "No changes"
           git push
