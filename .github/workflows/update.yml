@@ -6,7 +6,7 @@ permissions:
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"   # every hour
+    - cron: "0 * * * *"   # Every hour
 
 jobs:
   update:
@@ -23,44 +23,41 @@ jobs:
         run: |
           curl -L "$(cat rss-source.txt)" -o original.xml
 
-      - name: Apply 60-EM padding to entire feed
+      - name: Apply padding and strip HTML for Dakboard compatibility
         run: |
-          # 60 EM spaces (U+2003)
+          # 60 EM spaces
           PAD="&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;&#8195;"
 
           cp original.xml rss-working.xml
 
-          echo "Padding channel tags (title, link)..."
+          echo "Padding channel title + link..."
 
-          # ---- CHANNEL LEVEL: TITLE + LINK ----
+          # CHANNEL TAGS (title + link)
           for TAG in title link; do
             CONTENT=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/$TAG)" original.xml)
-            xmlstarlet ed -u "/rss/channel/$TAG" -v "$PAD$CONTENT" rss-working.xml > tmp && mv tmp rss-working.xml
+            xmlstarlet ed -u "/rss/channel/$TAG" -v "$PAD$CONTENT" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
           done
 
-          echo "Padding channel description (HTML inside CDATA)..."
+          echo "Padding channel description (converted to plain text)..."
+          CH_DESC=$(xmlstarlet sel -t -c "/rss/channel/description" original.xml | sed 's/<[^>]*>//g')
+          xmlstarlet ed -u "/rss/channel/description" -v "$PAD$CH_DESC" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
 
-          # CHANNEL DESCRIPTION (HTML preserved)
-          CH_DESC=$(xmlstarlet sel -t -c "/rss/channel/description" original.xml | sed 's/<description>//;s/<\/description>//')
-          xmlstarlet ed -u "/rss/channel/description" -v "<![CDATA[$PAD$CH_DESC]]>" rss-working.xml > tmp && mv tmp rss-working.xml
-
-          echo "Padding item-level fields..."
-
+          echo "Processing items..."
           COUNT=$(xmlstarlet sel -t -v "count(/rss/channel/item)" original.xml)
 
           for i in $(seq 1 $COUNT); do
 
             # TITLE
             T=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/item[$i]/title)" original.xml)
-            xmlstarlet ed -u "/rss/channel/item[$i]/title" -v "$PAD$T" rss-working.xml > tmp && mv tmp rss-working.xml
+            xmlstarlet ed -u "/rss/channel/item[$i]/title" -v "$PAD$T" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
 
-            # DESCRIPTION (HTML preserved inside CDATA)
-            D=$(xmlstarlet sel -t -c "/rss/channel/item[$i]/description" original.xml | sed 's/<description>//;s/<\/description>//')
-            xmlstarlet ed -u "/rss/channel/item[$i]/description" -v "<![CDATA[$PAD$D]]>" rss-working.xml > tmp && mv tmp rss-working.xml
+            # DESCRIPTION → strip HTML → plain text only
+            D=$(xmlstarlet sel -t -c "/rss/channel/item[$i]/description" original.xml | sed 's/<[^>]*>//g')
+            xmlstarlet ed -u "/rss/channel/item[$i]/description" -v "$PAD$D" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
 
             # LINK
             L=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/item[$i]/link)" original.xml)
-            xmlstarlet ed -u "/rss/channel/item[$i]/link" -v "$PAD$L" rss-working.xml > tmp && mv tmp rss-working.xml
+            xmlstarlet ed -u "/rss/channel/item[$i]/link" -v "$PAD$L" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
 
           done
 
@@ -71,5 +68,5 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add rss.xml
-          git commit -m "Updated padded RSS feed" || echo "No changes to commit"
+          git commit -m "Updated padded RSS feed" || echo "No changes"
           git push
