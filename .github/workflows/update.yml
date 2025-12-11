@@ -30,31 +30,38 @@ jobs:
 
           cp original.xml rss-working.xml
 
-          echo "Padding channel tags..."
+          echo "Padding channel tags (title, link)..."
 
-          # ---- CHANNEL LEVEL ----
-          for TAG in title description link; do
+          # ---- CHANNEL LEVEL: TITLE + LINK ----
+          for TAG in title link; do
             CONTENT=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/$TAG)" original.xml)
-            xmlstarlet ed -u "/rss/channel/$TAG" -v "$PAD$CONTENT" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
+            xmlstarlet ed -u "/rss/channel/$TAG" -v "$PAD$CONTENT" rss-working.xml > tmp && mv tmp rss-working.xml
           done
 
-          echo "Padding item tags..."
+          echo "Padding channel description (HTML inside CDATA)..."
 
-          # Count items
+          # CHANNEL DESCRIPTION (HTML preserved)
+          CH_DESC=$(xmlstarlet sel -t -c "/rss/channel/description" original.xml | sed 's/<description>//;s/<\/description>//')
+          xmlstarlet ed -u "/rss/channel/description" -v "<![CDATA[$PAD$CH_DESC]]>" rss-working.xml > tmp && mv tmp rss-working.xml
+
+          echo "Padding item-level fields..."
+
           COUNT=$(xmlstarlet sel -t -v "count(/rss/channel/item)" original.xml)
 
           for i in $(seq 1 $COUNT); do
+
             # TITLE
             T=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/item[$i]/title)" original.xml)
-            xmlstarlet ed -u "/rss/channel/item[$i]/title" -v "$PAD$T" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
+            xmlstarlet ed -u "/rss/channel/item[$i]/title" -v "$PAD$T" rss-working.xml > tmp && mv tmp rss-working.xml
 
-            # DESCRIPTION (preserves HTML)
+            # DESCRIPTION (HTML preserved inside CDATA)
             D=$(xmlstarlet sel -t -c "/rss/channel/item[$i]/description" original.xml | sed 's/<description>//;s/<\/description>//')
-            xmlstarlet ed -u "/rss/channel/item[$i]/description" -v "$PAD$D" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
+            xmlstarlet ed -u "/rss/channel/item[$i]/description" -v "<![CDATA[$PAD$D]]>" rss-working.xml > tmp && mv tmp rss-working.xml
 
             # LINK
             L=$(xmlstarlet sel -t -v "normalize-space(/rss/channel/item[$i]/link)" original.xml)
-            xmlstarlet ed -u "/rss/channel/item[$i]/link" -v "$PAD$L" rss-working.xml > tmp.xml && mv tmp.xml rss-working.xml
+            xmlstarlet ed -u "/rss/channel/item[$i]/link" -v "$PAD$L" rss-working.xml > tmp && mv tmp rss-working.xml
+
           done
 
           mv rss-working.xml rss.xml
